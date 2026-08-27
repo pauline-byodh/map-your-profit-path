@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Map Your Profit Path</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  html, body, #root { height: 100%; margin: 0; background: #0B0A08; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+/* ---- Minimal hand-rolled icon components (no external icon package needed) ---- */
+function Icon({ children, size = 16, ...props }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      {children}
+    </svg>
+  );
+}
+const ArrowRight = (p) => <Icon {...p}><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></Icon>;
+const Target = (p) => <Icon {...p}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /></Icon>;
+const CircleDollarSign = (p) => <Icon {...p}><circle cx="12" cy="12" r="9" /><path d="M12 6.5v11M15 9.2c0-1.2-1.3-2.2-3-2.2s-3 1-3 2.2 1.3 1.8 3 2 3 .8 3 2-1.3 2.2-3 2.2-3-1-3-2.2" /></Icon>;
+const Award = (p) => <Icon {...p}><circle cx="12" cy="8" r="5.5" /><path d="M8.2 13 7 21l5-2.5L17 21l-1.2-8" /></Icon>;
+const Route = (p) => <Icon {...p}><circle cx="6" cy="18" r="2.2" /><circle cx="18" cy="6" r="2.2" /><path d="M8 18h5a4 4 0 0 0 4-4V8" /></Icon>;
+const GitCompare = (p) => <Icon {...p}><circle cx="6" cy="6" r="2.2" /><circle cx="18" cy="18" r="2.2" /><path d="M8 6h5a4 4 0 0 1 4 4v2" /><path d="M16 18H11a4 4 0 0 1-4-4v-2" /><path d="M14 9l3 3-3 3" /><path d="M10 15l-3-3 3-3" /></Icon>;
+const Trophy = (p) => <Icon {...p}><path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" /><path d="M8 6H5a2 2 0 0 0 0 4h.3M16 6h3a2 2 0 0 1 0 4h-.3" /><path d="M12 13v3M9 20h6M10 17h4v3h-4z" /></Icon>;
+const Info = (p) => <Icon {...p}><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7.5v.01" /></Icon>;
+const Copy = (p) => <Icon {...p}><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></Icon>;
+/* ------------------------------------------------------------------------------ */
+
+
+const GOLD = "#E8B23D";
+const GOLD_SOFT = "#C89A3C";
+const CREAM = "#F3EEDF";
+const ROSE = "#E7C6BB";
+const ROSE_TEXT = "#5B2A20";
+const NEUTRAL_RING = "rgba(243,238,223,0.75)";
+const NEUTRAL_BORDER = "rgba(243,238,223,0.14)";
+const MUTED_CREAM = "rgba(243,238,223,0.52)";
+const PATH_ACCENTS = ["#6C9BF0", "#C084E0"];
+
+const uid = () => Math.random().toString(36).slice(2, 9);
+
+function makePath(name) {
+  return {
+    id: uid(),
+    name,
+    foundDesc: "",
+    foundSpend: 0,
+    saleDesc: "",
+    revenue: 0,
+    saleSpend: 0,
+    saleFeeMode: "$",
+    saleFeePct: 0,
+    fulfillDesc: "",
+    fulfillCost: 0,
+  };
+}
+
+function fmt$(n) {
+  const neg = n < 0;
+  const v = Math.round(Math.abs(n)).toLocaleString();
+  return `${neg ? "-" : ""}$${v}`;
+}
+function clamp01(t) {
+  return Math.max(0, Math.min(1, t));
+}
+function computeMetrics(pp) {
+  const saleFeeDollar = pp.saleFeeMode === "%" ? (pp.revenue * (pp.saleFeePct || 0)) / 100 : pp.saleSpend;
+  const totalSpend = pp.foundSpend + saleFeeDollar + pp.fulfillCost;
+  const profit = pp.revenue - totalSpend;
+  return { totalSpend, profit, saleFeeDollar };
+}
+function statusPalette(profit) {
+  if (profit >= 0) return { ring: "#2FA968", glow: "rgba(47,169,104,0.35)", pill: "#2FA968" };
+  return { ring: "#FF5C4D", glow: "rgba(255,92,77,0.4)", pill: "#FF5C4D" };
+}
+
+function CostField({ label, tooltip, value, onChange, variant = "rose", className = "" }) {
+  const [showInfo, setShowInfo] = useState(false);
+  const bg = variant === "gold" ? `linear-gradient(135deg, ${GOLD}, ${GOLD_SOFT})` : ROSE;
+  const border = variant === "gold" ? "1px solid rgba(255,255,255,0.35)" : "none";
+  const textColor = variant === "gold" ? "#FFFFFF" : ROSE_TEXT;
+  const badgeBg = variant === "gold" ? "rgba(255,255,255,0.25)" : "rgba(91,42,32,0.15)";
+  return (
+    <div className={`rounded-lg px-2.5 sm:px-3 py-1 sm:py-1.5 ${className}`} style={{ background: bg, border }}>
+      <div className="flex items-start justify-between gap-1 sm:gap-1.5 mb-0.5 sm:mb-1">
+        <div className="flex items-center gap-1">
+          <span
+            className="w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full flex items-center justify-center text-[8px] sm:text-[9px] font-bold shrink-0"
+            style={{ backgroundColor: badgeBg, color: textColor }}
+          >
+            $
+          </span>
+          <span className="text-[8.5px] sm:text-[9.5px] font-semibold" style={{ color: textColor }}>
+            {label}
+          </span>
+        </div>
+        {tooltip && (
+          <button type="button" onClick={() => setShowInfo((s) => !s)} className="shrink-0 opacity-60 hover:opacity-100 transition-opacity">
+            <Info size={10} style={{ color: textColor }} />
+          </button>
+        )}
+      </div>
+      {showInfo && tooltip && (
+        <p className="text-[9px] sm:text-[10px] leading-snug mb-1 sm:mb-1.5 opacity-80" style={{ color: textColor }}>
+          {tooltip}
+        </p>
+      )}
+      <div className="flex items-center gap-1">
+        <span className="text-[13px] sm:text-sm font-mono" style={{ color: variant === "gold" ? "rgba(255,255,255,0.75)" : `${textColor}99` }}>$</span>
+        <input
+          type="number"
+          inputMode="decimal"
+          value={value === 0 ? "" : value}
+          onChange={(e) => onChange(e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
+          placeholder="0"
+          className="w-full bg-transparent outline-none text-[13px] sm:text-[15px] font-mono font-bold min-w-0"
+          style={{ color: textColor }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function FeeField({ path, update }) {
+  const [showInfo, setShowInfo] = useState(false);
+  const mode = path.saleFeeMode || "$";
+  const computedDollar = (path.revenue * (path.saleFeePct || 0)) / 100;
+
+  function switchMode(m) {
+    if (m === "%" && mode !== "%") {
+      const seedPct = path.revenue > 0 ? Math.round(((path.saleSpend || 0) / path.revenue) * 1000) / 10 : path.saleFeePct || 0;
+      update("saleFeeMode", "%");
+      update("saleFeePct", seedPct);
+    } else if (m === "$" && mode !== "$") {
+      update("saleFeeMode", "$");
+      update("saleSpend", Math.round(computedDollar));
+    }
+  }
+
+  return (
+    <div className="rounded-lg px-2.5 sm:px-3 py-1 sm:py-1.5" style={{ backgroundColor: ROSE }}>
+      <div className="flex items-start justify-between gap-1 sm:gap-1.5 mb-0.5 sm:mb-1">
+        <div className="flex items-center gap-1">
+          <span
+            className="w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full flex items-center justify-center text-[8px] sm:text-[9px] font-bold shrink-0"
+            style={{ backgroundColor: "rgba(91,42,32,0.15)", color: ROSE_TEXT }}
+          >
+            $
+          </span>
+          <span className="text-[8.5px] sm:text-[9.5px] font-semibold whitespace-nowrap" style={{ color: ROSE_TEXT }}>
+            Fees
+          </span>
+          <button type="button" onClick={() => setShowInfo((s) => !s)} className="shrink-0 opacity-60 hover:opacity-100 transition-opacity">
+            <Info size={10} style={{ color: ROSE_TEXT }} />
+          </button>
+        </div>
+        <div className="flex rounded-full overflow-hidden shrink-0" style={{ border: `1.5px solid ${ROSE_TEXT}55`, backgroundColor: "rgba(255,255,255,0.25)" }}>
+          <button
+            type="button"
+            onClick={() => switchMode("$")}
+            className="px-1 sm:px-2.5 py-0.5 sm:py-1 text-[8px] sm:text-[10px] font-extrabold transition-all"
+            style={
+              mode === "$"
+                ? { backgroundColor: ROSE_TEXT, color: "#fff", boxShadow: `0 1px 5px ${ROSE_TEXT}77` }
+                : { color: `${ROSE_TEXT}88` }
+            }
+          >
+            $
+          </button>
+          <button
+            type="button"
+            onClick={() => switchMode("%")}
+            className="px-1 sm:px-2.5 py-0.5 sm:py-1 text-[8px] sm:text-[10px] font-extrabold transition-all"
+            style={
+              mode === "%"
+                ? { backgroundColor: ROSE_TEXT, color: "#fff", boxShadow: `0 1px 5px ${ROSE_TEXT}77` }
+                : { color: `${ROSE_TEXT}88` }
+            }
+          >
+            %
+          </button>
+        </div>
+      </div>
+      {showInfo && (
+        <p className="text-[9px] sm:text-[10px] leading-snug mb-1 sm:mb-1.5 opacity-80" style={{ color: ROSE_TEXT }}>
+          What fees/costs are charged when you make a sale using this channel? (DoorDash fees, Stripe fees, etc.) Use % for a cut of revenue, or $ for a flat fee.
+        </p>
+      )}
+      {mode === "$" ? (
+        <div className="flex items-center gap-1">
+          <span className="text-[13px] sm:text-sm font-mono" style={{ color: `${ROSE_TEXT}99` }}>$</span>
+          <input
+            type="number"
+            inputMode="decimal"
+            value={path.saleSpend === 0 ? "" : path.saleSpend}
+            onChange={(e) => update("saleSpend", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
+            placeholder="0"
+            className="w-full bg-transparent outline-none text-[13px] sm:text-[15px] font-mono font-bold min-w-0"
+            style={{ color: ROSE_TEXT }}
+          />
+        </div>
+      ) : (
+        <div>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              inputMode="decimal"
+              value={path.saleFeePct === 0 ? "" : path.saleFeePct}
+              onChange={(e) => update("saleFeePct", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
+              placeholder="0"
+              className="w-full bg-transparent outline-none text-[13px] sm:text-[15px] font-mono font-bold min-w-0"
+              style={{ color: ROSE_TEXT }}
+            />
+            <span className="text-[13px] sm:text-sm font-mono" style={{ color: `${ROSE_TEXT}99` }}>%</span>
+          </div>
+          <div className="text-[9px] sm:text-[10px] font-mono mt-0.5" style={{ color: `${ROSE_TEXT}99` }}>
+            = {fmt$(computedDollar)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DescLine({ value, onChange, placeholder, className = "mb-1.5 sm:mb-2" }) {
+  return (
+    <div className={`rounded-lg px-2.5 sm:px-3 py-1 sm:py-1.5 ${className}`} style={{ backgroundColor: CREAM }}>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full bg-transparent outline-none text-[12px] sm:text-[13.5px] font-medium border-b border-[#1B2B22]/20 focus:border-[#1B2B22]/50 pb-0.5 placeholder:text-[#1B2B22]/35 transition-colors"
+        style={{ color: "#241E14" }}
+      />
+    </div>
+  );
+}
+
+function useAnimatedNumber(target, duration = 500) {
+  const [display, setDisplay] = useState(target);
+  const rafRef = useRef();
+  const fromRef = useRef(target);
+  const startRef = useRef(null);
+
+  useEffect(() => {
+    fromRef.current = display;
+    startRef.current = null;
+    cancelAnimationFrame(rafRef.current);
+
+    function step(ts) {
+      if (startRef.current === null) startRef.current = ts;
+      const progress = Math.min((ts - startRef.current) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(fromRef.current + (target - fromRef.current) * eased);
+      if (progress < 1) rafRef.current = requestAnimationFrame(step);
+    }
+    rafRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target, duration]);
+
+  return display;
+}
+
+function RevenueCoin({ revenue }) {
+  const displayRevenue = useAnimatedNumber(revenue);
+  const [pulseKey, setPulseKey] = useState(0);
+  const prevRef = useRef(revenue);
+
+  useEffect(() => {
+    if (prevRef.current !== revenue) {
+      setPulseKey((k) => k + 1);
+      prevRef.current = revenue;
+    }
+  }, [revenue]);
+
+  const magnitude = clamp01(revenue / 8000);
+  const scale = 1 + magnitude * 0.4;
+  const glow = 0.35 + magnitude * 0.45;
+
+  return (
+    <div className="flex items-center gap-2 sm:gap-2.5 mb-1.5 sm:mb-2">
+      <div
+        key={pulseKey}
+        className="rounded-full flex items-center justify-center coin-pulse shrink-0"
+        style={{
+          width: 34,
+          height: 34,
+          background: `radial-gradient(circle at 35% 30%, #F6D57E, ${GOLD_SOFT} 70%)`,
+          boxShadow: `0 0 ${10 + magnitude * 18}px rgba(232,178,61,${glow})`,
+          transform: `scale(${scale})`,
+          transition: "transform 450ms cubic-bezier(.34,1.56,.64,1), box-shadow 450ms ease",
+        }}
+      >
+        {revenue > 0 ? (
+          <span className="font-mono font-extrabold text-[#3A2B08] leading-none" style={{ fontSize: 8.5 }}>
+            {fmt$(displayRevenue)}
+          </span>
+        ) : (
+          <CircleDollarSign size={14} className="text-[#3A2B08]" strokeWidth={2.2} />
+        )}
+      </div>
+      <span className="text-[8.5px] sm:text-[9.5px] uppercase tracking-wider font-bold leading-tight" style={{ color: GOLD }}>
+        Revenue comes in here
+      </span>
+    </div>
+  );
+}
+
+function Panel({ badge, ringColor = NEUTRAL_RING, borderColor = NEUTRAL_BORDER, title, subtitle, children }) {
+  return (
+    <div
+      className="relative rounded-2xl p-2.5 sm:p-4 flex-1 min-w-[230px]"
+      style={{ backgroundColor: "rgba(255,255,255,0.035)", border: `1px solid ${borderColor}` }}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <span
+          className="w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-[10px] sm:text-[12px] font-bold shrink-0"
+          style={{ backgroundColor: "#0E0C0A", border: `2px solid ${ringColor}`, color: ringColor }}
+        >
+          {badge}
+        </span>
+        <h3 className="font-display text-[15px] sm:text-[14px] font-700 tracking-wide uppercase text-white">{title}</h3>
+      </div>
+      <p className="text-[13px] sm:text-[13px] mb-1.5 sm:mb-2 leading-snug" style={{ color: MUTED_CREAM }}>
+        {subtitle}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+function ConnectorArrow({ direction = "right" }) {
+  if (direction === "down") {
+    return (
+      <div className="flex items-center justify-center py-1">
+        <ArrowRight size={16} style={{ color: "rgba(243,238,223,0.3)", transform: "rotate(90deg)" }} />
+      </div>
+    );
+  }
+  return (
+    <div className="hidden md:flex items-center justify-center w-6 shrink-0 pt-10">
+      <ArrowRight size={18} style={{ color: "rgba(243,238,223,0.3)" }} />
+    </div>
+  );
+}
+
+function fmtPct(n) {
+  return `${Math.round(n)}%`;
+}
+
+function ResultPanel({ revenue, totalSpend, profit, isWinner }) {
+  const status = statusPalette(profit);
+  const keepPct = revenue > 0 ? (profit / revenue) * 100 : null;
+  return (
+    <Panel badge="4" ringColor={status.ring} title="What You Keep" subtitle="What's left from this path after the costs above.">
+      {isWinner && (
+        <div
+          className="mb-2 inline-flex items-center gap-1 text-[10px] font-bold text-white px-2 py-0.5 rounded-full"
+          style={{ backgroundColor: status.ring }}
+        >
+          <Award size={11} /> WINNING PATH
+        </div>
+      )}
+      <div
+        className="rounded-xl px-3 py-3 sm:px-4 sm:py-5 flex flex-col items-center text-center"
+        style={{ backgroundColor: "rgba(255,255,255,0.03)", border: `1px solid ${status.ring}55`, boxShadow: `0 0 30px ${status.glow}` }}
+      >
+        <div className="font-mono font-extrabold leading-none mb-1.5" style={{ fontSize: "clamp(38px,10vw,68px)", color: status.pill }}>
+          {fmt$(profit)}
+        </div>
+        <div className="text-[9.5px] sm:text-[10.5px] font-bold uppercase tracking-wider mb-2 sm:mb-3" style={{ color: `${status.pill}cc` }}>
+          {revenue > 0 ? `Left from this ${fmt$(revenue)} sale` : "Left from this path"}
+        </div>
+        {keepPct !== null && (
+          <div className="flex items-center gap-1.5 mb-3 sm:mb-4 rounded-full px-2.5 sm:px-3 py-1 sm:py-1.5" style={{ backgroundColor: `${status.pill}22` }}>
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: status.pill }} />
+            <span className="text-[11px] sm:text-[12px] font-bold" style={{ color: status.pill }}>
+              You keep {fmtPct(keepPct)}
+            </span>
+          </div>
+        )}
+        <p className="text-[14px] sm:text-[15px] leading-relaxed" style={{ color: "rgba(243,238,223,0.75)" }}>
+          <span className="font-mono font-bold" style={{ color: GOLD }}>
+            {fmt$(revenue)}
+          </span>{" "}
+          came in.{" "}
+          <span className="font-mono font-bold" style={{ color: ROSE }}>
+            {fmt$(totalSpend)}
+          </span>{" "}
+          went to getting the sale and fulfilling it.{" "}
+          <span className="font-mono font-bold" style={{ color: status.pill }}>
+            {fmt$(profit)}
+          </span>{" "}
+          is left.
+        </p>
+      </div>
+    </Panel>
+  );
+}
+
+function PathWorksheet({ path, update, direction = "right", isWinner, identityColor }) {
+  const { totalSpend, profit } = computeMetrics(path);
+  const Connector = <ConnectorArrow direction={direction} />;
+  const wrapClass = direction === "down" ? "flex flex-col gap-1.5 items-stretch" : "flex flex-col gap-2 md:flex-row md:gap-1.5 items-stretch";
+  const ring = identityColor || NEUTRAL_RING;
+  const border = identityColor ? `${identityColor}40` : NEUTRAL_BORDER;
+
+  return (
+    <div className={wrapClass}>
+      <Panel badge="1" ringColor={ring} borderColor={border} title="Get Found" subtitle="Enter one way customers find your products/services">
+        <div className="flex gap-1.5 sm:gap-2 items-stretch">
+          <div className="flex-1 min-w-0">
+            <DescLine
+              value={path.foundDesc}
+              onChange={(v) => update("foundDesc", v)}
+              placeholder="e.g. OpenTable, ClassPass, Instagram ads..."
+              className="h-full flex flex-col justify-center"
+            />
+          </div>
+          <div
+            className="shrink-0 overflow-hidden"
+            style={{
+              width: path.foundDesc.trim() ? 136 : 0,
+              opacity: path.foundDesc.trim() ? 1 : 0,
+              transform: path.foundDesc.trim() ? "translateX(0)" : "translateX(18px)",
+              transition: "width 420ms cubic-bezier(.34,1.56,.64,1), transform 420ms cubic-bezier(.34,1.56,.64,1), opacity 320ms ease",
+            }}
+          >
+            <CostField
+              label="Upfront cost"
+              tooltip="What are you spending to get found this way? These are upfront costs, not fees associated with a sale."
+              value={path.foundSpend}
+              onChange={(v) => update("foundSpend", v)}
+              className="h-full flex flex-col justify-center"
+            />
+          </div>
+        </div>
+      </Panel>
+
+      {Connector}
+
+      <Panel badge="2" ringColor={ring} borderColor={border} title="What You Make" subtitle="What did they buy — and how did they buy it?">
+        <DescLine value={path.saleDesc} onChange={(v) => update("saleDesc", v)} placeholder="e.g. Booked on ClassPass, booked from my website..." />
+        <RevenueCoin revenue={path.revenue} />
+        <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+          <CostField label="Revenue" value={path.revenue} onChange={(v) => update("revenue", v)} variant="gold" />
+          <FeeField path={path} update={update} />
+        </div>
+      </Panel>
+
+      {Connector}
+
+      <Panel badge="3" ringColor={ring} borderColor={border} title="Fulfill the Order" subtitle="How is the order fulfilled or delivered?">
+        <div className="flex gap-1.5 sm:gap-2 items-stretch">
+          <div className="flex-1 min-w-0">
+            <DescLine
+              value={path.fulfillDesc}
+              onChange={(v) => update("fulfillDesc", v)}
+              placeholder="e.g. Delivery (3rd party)"
+              className="h-full flex flex-col justify-center"
+            />
+          </div>
+          <div
+            className="shrink-0 overflow-hidden"
+            style={{
+              width: path.fulfillDesc.trim() ? 136 : 0,
+              opacity: path.fulfillDesc.trim() ? 1 : 0,
+              transform: path.fulfillDesc.trim() ? "translateX(0)" : "translateX(18px)",
+              transition: "width 420ms cubic-bezier(.34,1.56,.64,1), transform 420ms cubic-bezier(.34,1.56,.64,1), opacity 320ms ease",
+            }}
+          >
+            <CostField
+              label="Fulfillment cost"
+              tooltip="Enter the cost to make/fulfill/deliver."
+              value={path.fulfillCost}
+              onChange={(v) => update("fulfillCost", v)}
+              className="h-full flex flex-col justify-center"
+            />
+          </div>
+        </div>
+      </Panel>
+
+      {Connector}
+
+      <ResultPanel revenue={path.revenue} totalSpend={totalSpend} profit={profit} isWinner={isWinner} />
+    </div>
+  );
+}
+
+
+
+function ComparisonShowdown({ paths, metricsList, winnerId, winnerName, diff }) {
+  const [a, b] = paths;
+  const [ma, mb] = metricsList;
+  const displayA = useAnimatedNumber(ma.profit, 700);
+  const displayB = useAnimatedNumber(mb.profit, 700);
+  const stA = statusPalette(ma.profit);
+  const stB = statusPalette(mb.profit);
+  const pctA = a.revenue > 0 ? (ma.profit / a.revenue) * 100 : null;
+  const pctB = b.revenue > 0 ? (mb.profit / b.revenue) * 100 : null;
+
+  const bothHaveRevenue = a.revenue > 0 && b.revenue > 0;
+  const sameRevenue = bothHaveRevenue && a.revenue === b.revenue;
+  const exactlyOneHasRevenue = a.revenue > 0 !== b.revenue > 0;
+
+  let heading = "Different Paths. Different Outcomes.";
+  let resultLine = null;
+  let resultSubtext = null;
+
+  if (winnerName) {
+    const winnerIsA = winnerId === a.id;
+    const winnerPath = winnerIsA ? a : b;
+    const loserPath = winnerIsA ? b : a;
+    const winnerM = winnerIsA ? ma : mb;
+    const loserM = winnerIsA ? mb : ma;
+
+    if (sameRevenue) {
+      heading = "Same Sale. Different Outcome.";
+      resultLine = `${winnerName} leaves ${fmt$(diff)} more per sale.`;
+    } else if (exactlyOneHasRevenue) {
+      heading = "Different Paths. Very Different Outcomes.";
+      resultLine = `${winnerName} puts you ${fmt$(diff)} ahead.`;
+      const revenuePath = winnerPath.revenue > 0 ? winnerPath : loserPath;
+      const zeroPath = revenuePath.id === winnerPath.id ? loserPath : winnerPath;
+      const revenueM = revenuePath.id === winnerPath.id ? winnerM : loserM;
+      const zeroM = zeroPath.id === winnerPath.id ? winnerM : loserM;
+      resultSubtext = `${revenuePath.name} generated a sale and kept ${fmt$(revenueM.profit)}. ${zeroPath.name} cost ${fmt$(zeroM.totalSpend)} without generating revenue.`;
+    } else {
+      heading = "Different Paths. Different Outcomes.";
+      resultLine = `${winnerName} leaves you ${fmt$(diff)} more from this path.`;
+    }
+  } else {
+    heading = "Two Paths. Same Outcome.";
+  }
+
+  return (
+    <div
+      className="mt-14 rounded-3xl p-6 sm:p-12 relative overflow-hidden"
+      style={{ background: "linear-gradient(160deg, rgba(232,178,61,0.09), rgba(255,255,255,0.02))", border: "1px solid rgba(232,178,61,0.32)" }}
+    >
+      <div
+        className="pointer-events-none absolute -top-16 left-1/2 -translate-x-1/2 w-[420px] h-[420px] rounded-full opacity-30 blur-3xl"
+        style={{ background: "radial-gradient(circle, rgba(232,178,61,0.45), transparent 70%)" }}
+      />
+
+      <div className="relative text-center mb-8 sm:mb-10">
+        <span className="text-[10px] sm:text-[11px] uppercase tracking-[0.35em] font-bold block mb-2" style={{ color: MUTED_CREAM }}>
+          Comparison
+        </span>
+        <h3 className="font-display font-800 uppercase tracking-tight text-white" style={{ fontSize: "clamp(20px,4vw,30px)" }}>
+          {heading}
+        </h3>
+      </div>
+
+      <div className="relative grid grid-cols-[1fr_auto_1fr] items-center gap-3 sm:gap-8">
+        <div className={`text-center transition-all duration-500 ${winnerId === a.id ? "scale-105 sm:scale-110" : "scale-95 opacity-70"}`}>
+          <div className="h-8 flex items-end justify-center mb-1">{winnerId === a.id && <Trophy size={26} className="animate-bounce" style={{ color: GOLD }} />}</div>
+          <div className="text-[12px] sm:text-[16px] uppercase tracking-wide font-bold mb-2 truncate" style={{ color: PATH_ACCENTS[0] }}>
+            {a.name}
+          </div>
+          <div className="font-mono font-extrabold leading-none tabular-nums" style={{ fontSize: "clamp(30px,7vw,64px)", color: stA.pill }}>
+            {fmt$(displayA)}
+          </div>
+          {pctA !== null && (
+            <div className="text-[11px] sm:text-[13px] font-semibold mt-1" style={{ color: `${stA.pill}cc` }}>
+              left · {fmtPct(pctA)} kept
+            </div>
+          )}
+        </div>
+
+        <div className="relative flex items-center justify-center">
+          <span className="absolute inline-flex h-12 w-12 sm:h-16 sm:w-16 rounded-full opacity-40 animate-ping" style={{ backgroundColor: GOLD }} />
+          <div
+            className="relative w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center font-display font-800 text-[13px] sm:text-[16px]"
+            style={{ background: `radial-gradient(circle at 35% 30%, #F6D57E, ${GOLD_SOFT})`, color: "#1B1305", boxShadow: "0 0 26px rgba(232,178,61,0.55)" }}
+          >
+            VS
+          </div>
+        </div>
+
+        <div className={`text-center transition-all duration-500 ${winnerId === b.id ? "scale-105 sm:scale-110" : "scale-95 opacity-70"}`}>
+          <div className="h-8 flex items-end justify-center mb-1">{winnerId === b.id && <Trophy size={26} className="animate-bounce" style={{ color: GOLD }} />}</div>
+          <div className="text-[12px] sm:text-[16px] uppercase tracking-wide font-bold mb-2 truncate" style={{ color: PATH_ACCENTS[1] }}>
+            {b.name}
+          </div>
+          <div className="font-mono font-extrabold leading-none tabular-nums" style={{ fontSize: "clamp(30px,7vw,64px)", color: stB.pill }}>
+            {fmt$(displayB)}
+          </div>
+          {pctB !== null && (
+            <div className="text-[11px] sm:text-[13px] font-semibold mt-1" style={{ color: `${stB.pill}cc` }}>
+              left · {fmtPct(pctB)} kept
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="relative text-center mt-8 sm:mt-10">
+        {winnerName ? (
+          <>
+            <p className="inline-flex items-center gap-2 font-display font-800 tracking-tight" style={{ color: GOLD, fontSize: "clamp(16px,3vw,24px)" }}>
+              <Trophy size={22} /> {resultLine}
+            </p>
+            {resultSubtext && (
+              <p className="text-[14px] sm:text-[15px] mt-2" style={{ color: "rgba(243,238,223,0.65)" }}>
+                {resultSubtext}
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-[14px] sm:text-[16px] font-semibold text-white/60">It's a tie so far — keep tuning the numbers.</p>
+        )}
+        <p className="text-[14px] sm:text-[15px] italic mt-3" style={{ color: MUTED_CREAM }}>
+          Now ask: which path deserves more of your time, money, and energy?
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function RevenueFlowBuilder() {
+  const [paths, setPaths] = useState([makePath("Path A")]);
+  const isCompare = paths.length === 2;
+
+  function updatePath(id, field, value) {
+    setPaths((prev) => prev.map((pp) => (pp.id === id ? { ...pp, [field]: value } : pp)));
+  }
+
+  function goSingle() {
+    setPaths((prev) => [prev[0]]);
+  }
+  function goCompare() {
+    setPaths((prev) => (prev.length === 2 ? prev : [prev[0], makePath("Path B")]));
+  }
+  function copyAtoB() {
+    setPaths((prev) => {
+      if (prev.length < 2) return prev;
+      const [a, b] = prev;
+      return [a, { ...a, id: b.id, name: b.name }];
+    });
+  }
+
+  const metricsList = paths.map((pp) => computeMetrics(pp));
+  let winnerId = null;
+  if (isCompare) {
+    const [a, b] = metricsList;
+    if (a.profit !== b.profit) winnerId = a.profit > b.profit ? paths[0].id : paths[1].id;
+  }
+  const diff = isCompare ? Math.abs(metricsList[0].profit - metricsList[1].profit) : 0;
+  const winnerName = winnerId ? paths.find((pp) => pp.id === winnerId).name : null;
+
+  return (
+    <div className="min-h-full w-full relative overflow-hidden" style={{ background: "radial-gradient(120% 100% at 20% 0%, #1C160D 0%, #0B0A08 55%, #060505 100%)", fontFamily: "'Inter', ui-sans-serif, sans-serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800;900&family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600;700&display=swap');
+        .font-display { font-family: 'Poppins', ui-sans-serif, sans-serif; }
+        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+        @keyframes coinPulse { 0% { transform: scale(0.85); } 55% { transform: scale(1.18); } 100% { transform: scale(1); } }
+        .coin-pulse { animation: coinPulse 420ms ease; }
+      `}</style>
+
+      <div className="pointer-events-none absolute -top-24 -left-24 w-[420px] h-[420px] rounded-full opacity-40 blur-3xl" style={{ background: "radial-gradient(circle, rgba(232,178,61,0.35), transparent 70%)" }} />
+      <div className="pointer-events-none absolute top-40 right-0 w-[300px] h-[300px] rounded-full opacity-25 blur-3xl" style={{ background: "radial-gradient(circle, rgba(232,178,61,0.25), transparent 70%)" }} />
+
+      <div className="relative max-w-[1320px] mx-auto px-4 sm:px-8 py-5 sm:py-14">
+        {/* Header */}
+        <div className="mb-2 sm:mb-4 text-center">
+          <h1 className="font-display text-[24px] sm:text-[64px] font-800 leading-[1.05] sm:leading-[1.02] uppercase tracking-tight">
+            <span className="text-white">Map your</span>{" "}
+            <span style={{ backgroundImage: `linear-gradient(90deg, #F6D57E, ${GOLD}, ${GOLD_SOFT})`, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>
+              profit path.
+            </span>
+          </h1>
+
+          <div
+            className="inline-flex items-center gap-2 sm:gap-3 rounded-xl px-3 py-2 sm:px-5 sm:py-3 text-left max-w-md mx-auto mb-3 sm:mb-7"
+            style={{ border: `1px solid ${NEUTRAL_BORDER}`, backgroundColor: "rgba(255,255,255,0.02)" }}
+          >
+            <Target size={16} style={{ color: "rgba(243,238,223,0.8)" }} className="shrink-0 sm:hidden" />
+            <Target size={22} style={{ color: "rgba(243,238,223,0.8)" }} className="shrink-0 hidden sm:block" />
+            <p className="text-[10.5px] sm:text-[12px] leading-snug text-white/90">
+              {isCompare
+                ? "Same product. Same sale. Very different profit. Map two ways you sell the same product to see what each path actually costs you—and which one leaves more money in your pocket."
+                : "Not every sale that brings in money makes you money. Map a sales path from how customers find you through fulfillment. See what's left—and whether that path is making you money, breaking even, or eating your profit."}
+            </p>
+          </div>
+
+          {/* Mode toggle */}
+          <div
+            className="inline-flex items-center rounded-full p-0.5 sm:p-1 gap-0.5 sm:gap-1"
+            style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(232,178,61,0.25)" }}
+          >
+            <button
+              onClick={goSingle}
+              className="flex items-center gap-1 sm:gap-1.5 text-[8.5px] sm:text-[12px] font-semibold px-2 sm:px-4 py-1 sm:py-2 rounded-full transition-colors whitespace-nowrap"
+              style={!isCompare ? { backgroundColor: GOLD, color: "#1B1305" } : { color: "rgba(243,238,223,0.6)" }}
+            >
+              <Route size={10} className="sm:hidden" />
+              <Route size={14} className="hidden sm:block" /> Map a Profit Path
+            </button>
+            <button
+              onClick={goCompare}
+              className="flex items-center gap-1 sm:gap-1.5 text-[8.5px] sm:text-[12px] font-semibold px-2 sm:px-4 py-1 sm:py-2 rounded-full transition-colors whitespace-nowrap"
+              style={isCompare ? { backgroundColor: GOLD, color: "#1B1305" } : { color: "rgba(243,238,223,0.6)" }}
+            >
+              <GitCompare size={10} className="sm:hidden" />
+              <GitCompare size={14} className="hidden sm:block" /> Compare Profit Paths
+            </button>
+          </div>
+        </div>
+
+        {/* Worksheet(s) */}
+        {!isCompare ? (
+          <div className="mt-4 sm:mt-10">
+            <PathWorksheet path={paths[0]} update={(f, v) => updatePath(paths[0].id, f, v)} direction="right" isWinner={false} />
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-4 mt-4 sm:mt-10">
+              {paths.map((pp, i) => {
+                const accent = PATH_ACCENTS[i];
+                return (
+                  <div key={pp.id}>
+                    <div className="flex flex-col items-center mb-4">
+                      <span
+                        className="text-[10px] font-extrabold uppercase tracking-[0.25em] px-3 py-1 rounded-full mb-2.5"
+                        style={{ backgroundColor: `${accent}26`, color: accent, border: `1px solid ${accent}66` }}
+                      >
+                        {i === 0 ? "Path A" : "Path B"}
+                      </span>
+                      <input
+                        value={pp.name}
+                        onChange={(e) => updatePath(pp.id, "name", e.target.value)}
+                        className="w-full text-center bg-transparent outline-none font-display text-[16px] font-700 tracking-wide pb-2 border-b border-dashed text-white"
+                        style={{ borderColor: `${accent}55` }}
+                      />
+                    </div>
+                    {i === 1 && (
+                      <button
+                        onClick={copyAtoB}
+                        className="flex items-center gap-1.5 mx-auto mb-4 text-[11px] font-semibold px-3 py-1.5 rounded-full transition-colors"
+                        style={{ border: `1px solid ${PATH_ACCENTS[1]}55`, color: PATH_ACCENTS[1], backgroundColor: `${PATH_ACCENTS[1]}14` }}
+                      >
+                        <Copy size={12} /> Copy {paths[0].name} → {pp.name}
+                      </button>
+                    )}
+                    <PathWorksheet path={pp} update={(f, v) => updatePath(pp.id, f, v)} direction="down" isWinner={winnerId === pp.id} identityColor={accent} />
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Comparison summary */}
+            <ComparisonShowdown paths={paths} metricsList={metricsList} winnerId={winnerId} winnerName={winnerName} diff={diff} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<RevenueFlowBuilder />);
+</script>
+</body>
+</html>
