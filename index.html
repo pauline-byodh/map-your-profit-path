@@ -17,7 +17,7 @@
 </head>
 <body>
 <div id="root"></div>
-<script type="text/babel" data-type="script" data-presets='[["react", {"runtime": "classic"}]]'>
+<script type="text/plain" id="app-source">
 const { useState, useEffect, useRef } = React;
 
 /* ---- Minimal hand-rolled icon components (no external icon package needed) ---- */
@@ -774,6 +774,13 @@ function RevenueFlowBuilder() {
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(<RevenueFlowBuilder />);
+</script>
+<script>
+  var __src = document.getElementById("app-source").textContent;
+  var __out = Babel.transform(__src, {
+    presets: [["react", { runtime: "classic" }]],
+  }).code;
+  (0, eval)(__out);
 </script>
 </body>
 </html>
