@@ -20,3 +20,17 @@ If you just want a link to share right now without setting up Vercel:
 ## Notes
 - Internet connection is required for visitors (it loads React/Tailwind/fonts from CDNs).
 - If you ever want a custom domain, Vercel and Netlify both support connecting one for free — just no credits/billing needed for hosting itself.
+
+## What was just added
+- **Favicon** (`favicon-32.png`, `apple-touch-icon.png`) — made from your `reels_logo.png` bolt mark.
+- **Open Graph / Twitter card image** (`og-image.png`) — includes your "Be The Data Hero" wordmark in the footer.
+- **Logo in the app header** — your wordmark now sits above the title inside `index.html`, referencing `logo.png`.
+- **Meta description + OG/Twitter tags** in `index.html`'s `<head>` — these reference `https://map-your-profit-path.vercel.app` directly. **If your domain ever changes, update the three `og:image` / `og:url` / `twitter:image` URLs in `index.html` to match.**
+- **Vercel Web Analytics snippet** — the `<script defer src="/_vercel/insights/script.js">` tag is in place, but it won't collect anything until you turn it on: go to your Vercel project → **Analytics** tab → **Enable**. Free tier covers casual traffic; no credit card required.
+
+## Files in this folder
+- `index.html` — the app
+- `logo.png` — your wordmark, used in the app header and the OG image
+- `favicon-32.png`, `apple-touch-icon.png` — browser tab icon / iOS home screen icon, made from your bolt mark
+- `og-image.png` — the social share preview image
+- `README.md` — this file

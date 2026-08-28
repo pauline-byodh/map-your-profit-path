@@ -4,6 +4,25 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Map Your Profit Path</title>
+<meta name="description" content="Follow one dollar through your business — map how you get found, sell, and fulfill, and see exactly what you keep from every sale." />
+
+<!-- Favicon -->
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+
+<!-- Open Graph / social preview -->
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Map Your Profit Path" />
+<meta property="og:description" content="Follow one dollar through your business — map how you get found, sell, and fulfill, and see exactly what you keep from every sale." />
+<meta property="og:image" content="https://map-your-profit-path.vercel.app/og-image.png" />
+<meta property="og:url" content="https://map-your-profit-path.vercel.app" />
+
+<!-- Twitter card -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Map Your Profit Path" />
+<meta name="twitter:description" content="Follow one dollar through your business — map how you get found, sell, and fulfill, and see exactly what you keep from every sale." />
+<meta name="twitter:image" content="https://map-your-profit-path.vercel.app/og-image.png" />
+
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800;900&family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -11,6 +30,7 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script defer src="/_vercel/insights/script.js"></script>
 <style>
   html, body, #root { height: 100%; margin: 0; background: #0B0A08; }
 </style>
@@ -678,6 +698,7 @@ function RevenueFlowBuilder() {
       <div className="relative max-w-[1320px] mx-auto px-4 sm:px-8 py-5 sm:py-14">
         {/* Header */}
         <div className="mb-2 sm:mb-4 text-center">
+          <img src="/logo.png" alt="Be The Data Hero" className="h-6 sm:h-8 w-auto mx-auto mb-4 sm:mb-6" />
           <h1 className="font-display text-[24px] sm:text-[64px] font-800 leading-[1.05] sm:leading-[1.02] uppercase tracking-tight">
             <span className="text-white">Map your</span>{" "}
             <span style={{ backgroundImage: `linear-gradient(90deg, #F6D57E, ${GOLD}, ${GOLD_SOFT})`, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>
